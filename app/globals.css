@@ -156,24 +156,6 @@
   }
 }
 
-:root {
-  /* Discord palette */
-  --discord-bg: oklch(0.32 0.012 277);
-  --discord-input-bg: oklch(0.29 0.012 277);
-  --discord-input: oklch(0.38 0.013 277);
-  --discord-popover: oklch(0.26 0.012 277);
-  --discord-border: oklch(0.24 0.012 277);
-  --discord-text: oklch(0.93 0.005 277);
-  --discord-muted: oklch(0.68 0.012 277);
-  --discord-blurple: oklch(0.58 0.2 277);
-  --discord-link: oklch(0.72 0.13 240);
-  --discord-code-bg: oklch(0.24 0.012 277);
-  --discord-codeblock-bg: oklch(0.22 0.012 277);
-  --discord-quote-border: oklch(0.5 0.012 277);
-  --discord-spoiler-bg: oklch(0.2 0.01 277);
-  --discord-spoiler-bg-hover: oklch(0.38 0.013 277);
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
