@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Éditeur Markdown Discord — Temps Réel</title>
+
+  <!-- ===================================================================== -->
+  <!--  DÉPENDANCES VIA CDN (aucune installation nécessaire)                  -->
+  <!--  - Tailwind CSS : design / utilitaires                                -->
+  <!--  - Highlight.js : coloration syntaxique des blocs de code             -->
+  <!-- ===================================================================== -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css"
+  />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <script>
+    // Configuration de la palette de couleurs officielle Discord dans Tailwind
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "discord-chat": "#313338",      // Fond de la zone de chat
+            "discord-editor": "#2b2d31",    // Fond de l'éditeur
+            "discord-sidebar": "#1e1f22",   // Barres latérales / en-têtes
+            "discord-text": "#dbdee1",      // Texte principal
+            "discord-muted": "#949ba4",     // Texte secondaire / atténué
+            "discord-blurple": "#5865f2",   // Couleur de marque Discord
+            "discord-link": "#00a8fc",      // Liens
+            "discord-mention": "#3c4270",   // Fond des mentions bleues
+            "discord-mention-text": "#c9cdfb",
+          },
+          fontFamily: {
+            // Police officielle de Discord (gg sans n'étant pas publique, on utilise un fallback fidèle)
+            discord: ['"Helvetica Neue"', "Helvetica", "Arial", "sans-serif"],
+            mono: ['"Consolas"', '"Courier New"', "monospace"],
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    /* ================================================================= */
+    /*  STYLES PERSONNALISÉS POUR LE RENDU FIDÈLE À DISCORD              */
+    /* ================================================================= */
+
+    /* --- Barre de défilement façon Discord --- */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #2b2d31; }
+    ::-webkit-scrollbar-thumb { background: #1a1b1e; border-radius: 4px; }
+
+    /* --- SPOILERS cliquables --- */
+    .discord-spoiler {
+      background-color: #111214;   /* Fond noir très sombre masquant le texte */
+      color: transparent;
+      border-radius: 4px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: background-color 0.1s ease;
+      user-select: none;
+    }
+    .discord-spoiler:hover { background-color: #1a1b1e; }
+    /* Une fois révélé (classe ajoutée au clic) */
+    .discord-spoiler.revealed {
+      background-color: rgba(255, 255, 255, 0.1);
+      color: inherit;
+      cursor: text;
+      user-select: text;
+    }
+
+    /* --- BLOCS DE CODE multilignes --- */
+    .discord-codeblock {
+      background-color: #1e1f22;
+      border: 1px solid #2b2d31;
+      border-radius: 6px;
+      margin: 6px 0;
+      overflow: hidden;
+      font-size: 0.85rem;
+    }
+    /* Petite barre d'en-tête grise indiquant le langage détecté */
+    .discord-codeblock-header {
+      background-color: #2b2d31;
+      color: #949ba4;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 4px 12px;
+      border-bottom: 1px solid #1a1b1e;
+      font-family: "Consolas", monospace;
+    }
+    .discord-codeblock pre {
+      margin: 0;
+      padding: 10px 12px;
+      overflow-x: auto;
+    }
+    .discord-codeblock code {
+      background: transparent !important;
+      padding: 0 !important;
+      font-family: "Consolas", "Courier New", monospace;
+    }
+
+    /* --- CODE EN LIGNE --- */
+    .discord-inline-code {
+      background-color: #1e1f22;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-size: 0.85em;
+      font-family: "Consolas", "Courier New", monospace;
+    }
+
+    /* --- CITATIONS (blockquotes) --- */
+    .discord-blockquote {
+      display: flex;
+      padding: 0 8px 0 12px;
+      margin: 2px 0;
+      position: relative;
+    }
+    .discord-blockquote::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background-color: #4e5058;
+      border-radius: 4px;
+    }
+
+    /* --- TITRES (Headers) --- */
+    .discord-h1 { font-size: 1.5rem; font-weight: 700; margin: 8px 0 4px; line-height: 1.3; }
+    .discord-h2 { font-size: 1.25rem; font-weight: 700; margin: 8px 0 4px; line-height: 1.3; }
+    .discord-h3 { font-size: 1.0rem; font-weight: 700; margin: 8px 0 4px; line-height: 1.3; }
+
+    /* --- LISTES --- */
+    .discord-list { margin: 4px 0; padding-left: 24px; }
+    .discord-list-ul { list-style-type: disc; }
+    .discord-list-ol { list-style-type: decimal; }
+    .discord-list li { margin: 2px 0; }
+
+    /* --- MENTIONS & BADGES --- */
+    .discord-mention {
+      background-color: rgba(88, 101, 242, 0.3);
+      color: #c9cdfb;
+      border-radius: 4px;
+      padding: 0 2px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.1s ease;
+    }
+    .discord-mention:hover { background-color: rgba(88, 101, 242, 0.6); }
+    /* Mentions globales @everyone / @here : fond rouge transparent */
+    .discord-mention-global {
+      background-color: rgba(240, 71, 71, 0.18);
+      color: #f23f43;
+      border-radius: 4px;
+      padding: 0 2px;
+      font-weight: 500;
+    }
+
+    /* --- TIMESTAMPS --- */
+    .discord-timestamp {
+      background-color: rgba(88, 101, 242, 0.15);
+      border-radius: 4px;
+      padding: 0 3px;
+      cursor: default;
+    }
+
+    /* --- Animation de la bannière Nitro --- */
+    @keyframes slideDown {
+      from { transform: translateY(-10px); opacity: 0; }
+      to   { transform: translateY(0);     opacity: 1; }
+    }
+    .animate-slide-down { animation: slideDown 0.25s ease-out; }
+
+    /* Empêche le textarea de casser le layout */
+    textarea { resize: none; }
+  </style>
+</head>
+
+<body class="bg-discord-sidebar font-discord text-discord-text antialiased">
+
+  <!-- ===================================================================== -->
+  <!--  EN-TÊTE DE L'APPLICATION                                             -->
+  <!-- ===================================================================== -->
+  <header class="bg-discord-sidebar border-b border-black/30 px-4 py-3 flex items-center gap-3">
+    <svg class="w-7 h-7 text-discord-blurple" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.249a18.27 18.27 0 0 0-5.487 0 12.6 12.6 0 0 0-.617-1.25.077.077 0 0 0-.079-.036A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.891.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.331c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+    </svg>
+    <h1 class="text-white font-bold text-lg">Éditeur Markdown Discord</h1>
+    <span class="text-discord-muted text-sm hidden sm:inline">— Prévisualisation en temps réel</span>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!--  LAYOUT SPLIT-SCREEN                                                   -->
+  <!-- ===================================================================== -->
+  <main class="flex flex-col lg:flex-row h-[calc(100vh-57px)]">
+
+    <!-- ===================== PANNEAU DE GAUCHE : ÉDITEUR ==================== -->
+    <section class="flex flex-col w-full lg:w-1/2 bg-discord-editor border-r border-black/30">
+
+      <!-- Barre d'outils interactive -->
+      <div class="flex items-center gap-1 px-2 py-2 bg-discord-sidebar border-b border-black/30 flex-wrap">
+        <button data-action="bold"      title="Gras (**texte**)"            class="toolbar-btn">B</button>
+        <button data-action="italic"    title="Italique (*texte*)"          class="toolbar-btn italic">I</button>
+        <button data-action="underline" title="Souligné (__texte__)"        class="toolbar-btn underline">U</button>
+        <button data-action="strike"    title="Barré (~~texte~~)"           class="toolbar-btn line-through">S</button>
+        <span class="w-px h-5 bg-black/30 mx-1"></span>
+        <button data-action="code"      title="Code en ligne (`texte`)"     class="toolbar-btn font-mono">&lt;/&gt;</button>
+        <button data-action="codeblock" title="Bloc de code (```)"          class="toolbar-btn font-mono">{ }</button>
+        <button data-action="spoiler"   title="Spoiler (||texte||)"         class="toolbar-btn">👁</button>
+        <button data-action="quote"     title="Citation (&gt; texte)"       class="toolbar-btn">❝</button>
+        <span class="w-px h-5 bg-black/30 mx-1"></span>
+        <button data-action="timestamp" title="Insérer un timestamp"        class="toolbar-btn">🕒</button>
+      </div>
+
+      <!-- Zone de saisie -->
+      <textarea
+        id="editor"
+        class="flex-1 w-full bg-discord-editor text-discord-text p-4 outline-none font-discord text-[15px] leading-relaxed placeholder:text-discord-muted"
+        placeholder="Tapez votre message Markdown ici...
+Exemples :
+**gras**, *italique*, __souligné__, ~~barré~~, ||spoiler||
+# Titre
+> Citation
+`code` et blocs ```python ... ```
+<@JohnDoe> <#général> @everyone
+<t:1735689600:R>"
+        spellcheck="false"></textarea>
+
+      <!-- Pied de l'éditeur : compteur de caractères -->
+      <div class="px-4 py-2 bg-discord-sidebar border-t border-black/30 flex justify-end">
+        <span id="char-counter" class="text-sm text-discord-muted font-mono">0 / 2000</span>
+      </div>
+    </section>
+
+    <!-- ===================== PANNEAU DE DROITE : APERÇU ==================== -->
+    <section class="flex flex-col w-full lg:w-1/2 bg-discord-chat overflow-hidden">
+
+      <!-- Bannière "Nitro" (limite dépassée) -->
+      <div id="nitro-banner" class="hidden animate-slide-down bg-gradient-to-r from-discord-blurple to-pink-500 px-4 py-2 text-sm text-white flex items-center justify-between gap-2">
+        <span>⚡ Oups ! Votre message dépasse 2000 caractères. Il vous faudrait <strong>Discord Nitro</strong> pour l'envoyer... ou pas 😏</span>
+        <button id="truncate-btn" class="bg-white/20 hover:bg-white/30 px-3 py-1 rounded text-xs font-semibold whitespace-nowrap transition-colors">
+          Tronquer à 2000
+        </button>
+      </div>
+
+      <!-- Paramètres de l'utilisateur simulé -->
+      <div class="flex items-center gap-3 px-4 py-2 bg-discord-sidebar/50 border-b border-black/20 text-sm flex-wrap">
+        <label class="flex items-center gap-2 text-discord-muted">
+          Pseudo :
+          <input id="username-input" type="text" value="v0 Bot"
+            class="bg-discord-sidebar text-discord-text rounded px-2 py-1 w-28 outline-none focus:ring-1 focus:ring-discord-blurple" />
+        </label>
+        <label class="flex items-center gap-2 text-discord-muted">
+          Avatar (URL) :
+          <input id="avatar-input" type="text" placeholder="https://..."
+            class="bg-discord-sidebar text-discord-text rounded px-2 py-1 w-36 outline-none focus:ring-1 focus:ring-discord-blurple" />
+        </label>
+      </div>
+
+      <!-- Zone de chat simulée -->
+      <div class="flex-1 overflow-y-auto p-4">
+        <div class="flex gap-3">
+          <!-- Avatar -->
+          <img id="preview-avatar"
+            src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' rx='20' fill='%235865f2'/%3E%3Ctext x='50%25' y='55%25' font-size='18' fill='white' text-anchor='middle' dominant-baseline='middle' font-family='sans-serif'%3Ev0%3C/text%3E%3C/svg%3E"
+            alt="Avatar de l'utilisateur"
+            class="w-10 h-10 rounded-full flex-shrink-0 object-cover" />
+
+          <!-- Message -->
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span id="preview-username" class="text-white font-medium hover:underline cursor-pointer">v0 Bot</span>
+              <span class="bg-discord-blurple text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase leading-none flex items-center gap-0.5">
+                <svg class="w-2.5 h-2.5" viewBox="0 0 16 16" fill="currentColor"><path d="M3.58 3.6a1 1 0 0 1 1.3-.34l.1.07L8 5.4l3.02-2.07a1 1 0 0 1 1.46 1.26l-.07.1L9.6 8l2.81 1.94a1 1 0 0 1-.96 1.74l-.1-.06L8 9.55l-3.35 2.3a1 1 0 0 1-1.3-1.5l.08-.08L6.4 8 3.58 5.4a1 1 0 0 1 0-1.8z"/></svg>
+                BOT
+              </span>
+              <span id="preview-time" class="text-discord-muted text-xs">aujourd'hui à 12:00</span>
+            </div>
+            <!-- Contenu rendu -->
+            <div id="preview" class="text-discord-text text-[15px] leading-relaxed break-words whitespace-pre-wrap"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Styles utilitaires pour les boutons de la barre d'outils -->
+  <style>
+    .toolbar-btn {
+      min-width: 32px;
+      height: 32px;
+      padding: 0 8px;
+      border-radius: 4px;
+      color: #b5bac1;
+      font-weight: 700;
+      font-size: 0.9rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.1s ease, color 0.1s ease;
+    }
+    .toolbar-btn:hover { background-color: #404249; color: #fff; }
+    .toolbar-btn:active { background-color: #2b2d31; }
+  </style>
+
+  <!-- ===================================================================== -->
+  <!--  LOGIQUE JAVASCRIPT                                                   -->
+  <!-- ===================================================================== -->
+  <script>
+    "use strict";
+
+    /* === Références DOM === */
+    const editor       = document.getElementById("editor");
+    const preview      = document.getElementById("preview");
+    const charCounter  = document.getElementById("char-counter");
+    const nitroBanner  = document.getElementById("nitro-banner");
+    const truncateBtn  = document.getElementById("truncate-btn");
+    const usernameInput= document.getElementById("username-input");
+    const avatarInput  = document.getElementById("avatar-input");
+    const previewUser  = document.getElementById("preview-username");
+    const previewAvatar= document.getElementById("preview-avatar");
+    const MAX_CHARS    = 2000;
+
+    /* ===================================================================== */
+    /*  UTILITAIRE : ÉCHAPPEMENT HTML (Sécurité XSS — Étape 1)               */
+    /* ===================================================================== */
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    /* ===================================================================== */
+    /*  UTILITAIRE : TRADUCTION DES TIMESTAMPS DISCORD EN FRANÇAIS           */
+    /* ===================================================================== */
+    function formatTimestamp(unixSeconds, format) {
+      const date = new Date(unixSeconds * 1000);
+      if (isNaN(date.getTime())) return "(timestamp invalide)";
+
+      // Options de formatage français
+      const optsDate     = { day: "numeric", month: "long", year: "numeric" };
+      const optsDateShort= { day: "2-digit", month: "2-digit", year: "numeric" };
+      const optsTime     = { hour: "2-digit", minute: "2-digit" };
+      const optsTimeLong = { hour: "2-digit", minute: "2-digit", second: "2-digit" };
+      const optsFull     = { weekday: "long", day: "numeric", month: "long", year: "numeric" };
+
+      switch (format) {
+        case "t": // Heure courte : 12:00
+          return date.toLocaleTimeString("fr-FR", optsTime);
+        case "T": // Heure longue : 12:00:00
+          return date.toLocaleTimeString("fr-FR", optsTimeLong);
+        case "d": // Date courte : 31/12/2024
+          return date.toLocaleDateString("fr-FR", optsDateShort);
+        case "D": // Date longue : 31 décembre 2024
+          return date.toLocaleDateString("fr-FR", optsDate);
+        case "f": // Date + heure : 31 décembre 2024 12:00
+          return date.toLocaleDateString("fr-FR", optsDate) + " " + date.toLocaleTimeString("fr-FR", optsTime);
+        case "F": // Complet : mardi 31 décembre 2024 12:00
+          return date.toLocaleDateString("fr-FR", optsFull) + " " + date.toLocaleTimeString("fr-FR", optsTime);
+        case "R": // Relatif : "il y a 2 heures" / "dans 1 an"
+          return formatRelativeTime(date);
+        default:
+          return date.toLocaleString("fr-FR");
+      }
+    }
+
+    /* Calcul d'un temps relatif lisible en français */
+    function formatRelativeTime(date) {
+      const diffMs = date.getTime() - Date.now();
+      const rtf = new Intl.RelativeTimeFormat("fr", { numeric: "auto" });
+      const absSec = Math.abs(diffMs) / 1000;
+
+      // On choisit l'unité la plus pertinente
+      const units = [
+        { unit: "year",   secs: 31536000 },
+        { unit: "month",  secs: 2592000  },
+        { unit: "day",    secs: 86400    },
+        { unit: "hour",   secs: 3600     },
+        { unit: "minute", secs: 60       },
+        { unit: "second", secs: 1        },
+      ];
+
+      for (const { unit, secs } of units) {
+        if (absSec >= secs || unit === "second") {
+          const value = Math.round(diffMs / 1000 / secs);
+          return rtf.format(value, unit);
+        }
+      }
+      return rtf.format(0, "second");
+    }
+
+    /* ===================================================================== */
+    /*  PARSEUR MARKDOWN DISCORD                                             */
+    /*  L'ordre des opérations est CRUCIAL pour éviter les conflits de regex */
+    /* ===================================================================== */
+    function parseDiscordMarkdown(raw) {
+      // --- ÉTAPE 1 : Échappement HTML complet (sécurité XSS) ---
+      let text = escapeHtml(raw);
+
+      // Tableaux de stockage pour les placeholders
+      const codeBlocks  = [];
+      const inlineCodes = [];
+
+      /* ----------------------------------------------------------------- */
+      /*  ÉTAPE 2 : Extraction & protection des BLOCS DE CODE (```)         */
+      /*  On les remplace par un placeholder __CODE_BLOCK_X__               */
+      /* ----------------------------------------------------------------- */
+      text = text.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
+        const index = codeBlocks.length;
+        // Nettoyage du code (suppression du saut de ligne final éventuel)
+        const cleanCode = code.replace(/\n$/, "");
+        let highlighted, detectedLang;
+
+        try {
+          if (lang && hljs.getLanguage(lang)) {
+            // Langage explicitement fourni et reconnu
+            highlighted  = hljs.highlight(cleanCode, { language: lang }).value;
+            detectedLang = lang;
+          } else {
+            // Détection automatique du langage
+            const auto   = hljs.highlightAuto(cleanCode);
+            highlighted  = auto.value;
+            detectedLang = auto.language || "texte";
+          }
+        } catch (e) {
+          // En cas d'erreur : on affiche le code brut échappé
+          highlighted  = cleanCode;
+          detectedLang = lang || "texte";
+        }
+
+        // Construction du HTML du bloc de code (en-tête grise + code coloré)
+        const html =
+          `<div class="discord-codeblock">` +
+            `<div class="discord-codeblock-header">${detectedLang}</div>` +
+            `<pre><code class="hljs">${highlighted}</code></pre>` +
+          `</div>`;
+
+        codeBlocks.push(html);
+        return `\u0000CODE_BLOCK_${index}\u0000`; // placeholder protégé
+      });
+
+      /* ----------------------------------------------------------------- */
+      /*  ÉTAPE 3 : Extraction & protection des CODES EN LIGNE (`)          */
+      /* ----------------------------------------------------------------- */
+      text = text.replace(/`([^`\n]+?)`/g, (match, code) => {
+        const index = inlineCodes.length;
+        inlineCodes.push(`<span class="discord-inline-code">${code}</span>`);
+        return `\u0000INLINE_CODE_${index}\u0000`;
+      });
+
+      /* ----------------------------------------------------------------- */
+      /*  ÉTAPE 4 : CITATIONS                                               */
+      /*  - Citation globale : >>> (tout ce qui suit est cité)             */
+      /*  - Citation simple  : > (sur une seule ligne)                     */
+      /* ----------------------------------------------------------------- */
+
+      // Citation globale >>>  (multiligne, jusqu'à la fin)
+      text = text.replace(/^&gt;&gt;&gt; ([\s\S]*)$/m, (match, content) => {
+        return `<div class="discord-blockquote"><div>${content}</div></div>`;
+      });
+
+      // Citations sur une ligne : on regroupe les lignes consécutives
+      text = text.replace(/(?:^&gt; ?.*(?:\n|$))+/gm, (block) => {
+        const content = block
+          .split("\n")
+          .filter((l) => l.length > 0)
+          .map((l) => l.replace(/^&gt; ?/, ""))
+          .join("\n");
+        return `<div class="discord-blockquote"><div>${content}</div></div>\n`;
+      });
+
+      /* ----------------------------------------------------------------- */
+      /*  ÉTAPE 5 : STYLES DE TEXTE EN LIGNE (par ordre de priorité)        */
+      /* ----------------------------------------------------------------- */
+
+      // Gras + Italique : ***texte***
+      text = text.replace(/\*\*\*([\s\S]+?)\*\*\*/g, "<strong><em>$1</em></strong>");
+      // Gras : **texte**
+      text = text.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
+      // Souligné : __texte__
+      text = text.replace(/__([\s\S]+?)__/g, "<u>$1</u>");
+      // Italique : *texte*
+      text = text.replace(/\*([^\*\n]+?)\*/g, "<em>$1</em>");
+      // Italique : _texte_ (aux frontières de mots uniquement)
+      text = text.replace(/\b_([^_\n]+?)_\b/g, "<em>$1</em>");
+      // Barré : ~~texte~~
+      text = text.replace(/~~([\s\S]+?)~~/g, "<del>$1</del>");
+      // Spoilers : ||texte|| (cliquables)
+      text = text.replace(/\|\|([\s\S]+?)\|\|/g, '<span class="discord-spoiler">$1</span>');
+
+      /* ----------------------------------------------------------------- */
+      /*  ÉTAPE 6 : TITRES (Headers) en début de ligne                     */
+      /* ----------------------------------------------------------------- */
+      text = text.replace(/^### (.+)$/gm, '<div class="discord-h3">$1</div>');
+      text = text.replace(/^## (.+)$/gm,  '<div class="discord-h2">$1</div>');
+      text = text.replace(/^# (.+)$/gm,   '<div class="discord-h1">$1</div>');
+
+      /* ----------------------------------------------------------------- */
+      /*  ÉTAPE 7 : LISTES (puces et numérotées)                           */
+      /* ----------------------------------------------------------------- */
+
+      // Listes à puces : lignes commençant par "- " ou "* "
+      text = text.replace(/(?:^[ \t]*[-*] .*(?:\n|$))+/gm, (block) => {
+        const items = block
+          .trim()
+          .split("\n")
+          .map((l) => l.replace(/^[ \t]*[-*] /, ""))
+          .map((l) => `<li>${l}</li>`)
+          .join("");
+        return `<ul class="discord-list discord-list-ul">${items}</ul>\n`;
+      });
+
+      // Listes numérotées : lignes commençant par "1. ", "2. ", etc.
+      text = text.replace(/(?:^[ \t]*\d+\. .*(?:\n|$))+/gm, (block) => {
+        const items = block
+          .trim()
+          .split("\n")
+          .map((l) => l.replace(/^[ \t]*\d+\. /, ""))
+          .map((l) => `<li>${l}</li>`)
+          .join("");
+        return `<ol class="discord-list discord-list-ol">${items}</ol>\n`;
+      });
+
+      /* ----------------------------------------------------------------- */
+      /*  ÉTAPE 8 : MENTIONS & BADGES DISCORD                              */
+      /*  Rappel : "<" et ">" ont été échappés en &lt; et &gt;            */
+      /* ----------------------------------------------------------------- */
+
+      // Rôles : <@&role>  ->  @role (rôle)
+      text = text.replace(/&lt;@&amp;([^&\s]+?)&gt;/g,
+        '<span class="discord-mention">@$1 (rôle)</span>');
+      // Salons : <#salon>  ->  #salon
+      text = text.replace(/&lt;#([^&\s]+?)&gt;/g,
+        '<span class="discord-mention">#$1</span>');
+      // Utilisateurs : <@username>  ->  @username
+      text = text.replace(/&lt;@([^&\s]+?)&gt;/g,
+        '<span class="discord-mention">@$1</span>');
+
+      // Mentions globales : @everyone et @here (badge rouge transparent)
+      text = text.replace(/@everyone/g, '<span class="discord-mention-global">@everyone</span>');
+      text = text.replace(/@here/g,     '<span class="discord-mention-global">@here</span>');
+
+      /* ----------------------------------------------------------------- */
+      /*  ÉTAPE 9 : TIMESTAMPS DYNAMIQUES <t:TIMESTAMP:FORMAT>             */
+      /* ----------------------------------------------------------------- */
+      text = text.replace(/&lt;t:(\d+)(?::([tTdDfFR]))?&gt;/g, (match, ts, fmt) => {
+        const formatted = formatTimestamp(parseInt(ts, 10), fmt || "f");
+        return `<span class="discord-timestamp" title="Format : ${fmt || "f"}">${formatted}</span>`;
+      });
+
+      /* ----------------------------------------------------------------- */
+      /*  ÉTAPE 10 : RESTAURATION des codes en ligne et blocs de code      */
+      /*  On réinjecte les placeholders mis de côté.                       */
+      /* ----------------------------------------------------------------- */
+      text = text.replace(/\u0000INLINE_CODE_(\d+)\u0000/g, (m, i) => inlineCodes[+i]);
+      text = text.replace(/\u0000CODE_BLOCK_(\d+)\u0000/g,  (m, i) => codeBlocks[+i]);
+
+      /* ----------------------------------------------------------------- */
+      /*  ÉTAPE 11 : SAUTS DE LIGNE                                        */
+      /*  On transforme les \n restants en <br>, SAUF juste après un       */
+      /*  bloc de structure fermé (titres, listes, citations, code).       */
+      /* ----------------------------------------------------------------- */
+      text = text.replace(/\n/g, (match, offset, full) => {
+        // On regarde ce qui précède immédiatement le saut de ligne
+        const before = full.slice(0, offset);
+        // Si la ligne se termine par une balise de bloc fermée, pas de <br>
+        if (/(<\/div>|<\/ul>|<\/ol>|<\/li>)\s*$/.test(before)) {
+          return "";
+        }
+        return "<br>";
+      });
+
+      return text;
+    }
+
+    /* ===================================================================== */
+    /*  RENDU & MISE À JOUR DE L'APERÇU                                      */
+    /* ===================================================================== */
+    function updatePreview() {
+      const raw = editor.value;
+
+      // 1) Mise à jour du compteur de caractères
+      const len = raw.length;
+      charCounter.textContent = `${len} / ${MAX_CHARS}`;
+      charCounter.classList.toggle("text-red-400", len > MAX_CHARS);
+      charCounter.classList.toggle("text-discord-muted", len <= MAX_CHARS);
+
+      // 2) Bannière Nitro si dépassement
+      nitroBanner.classList.toggle("hidden", len <= MAX_CHARS);
+
+      // 3) Parsing & injection du HTML
+      preview.innerHTML = parseDiscordMarkdown(raw);
+
+      // 4) Activation des spoilers cliquables
+      preview.querySelectorAll(".discord-spoiler").forEach((el) => {
+        el.addEventListener("click", function () {
+          this.classList.add("revealed");
+        });
+      });
+    }
+
+    /* ===================================================================== */
+    /*  BARRE D'OUTILS : insertion de syntaxe à l'emplacement du curseur     */
+    /* ===================================================================== */
+    function wrapSelection(before, after = before, placeholder = "texte") {
+      const start = editor.selectionStart;
+      const end   = editor.selectionEnd;
+      const value = editor.value;
+      const selected = value.slice(start, end) || placeholder;
+
+      const newText = value.slice(0, start) + before + selected + after + value.slice(end);
+      editor.value = newText;
+
+      // Repositionnement du curseur autour du texte inséré
+      const cursorStart = start + before.length;
+      editor.focus();
+      editor.setSelectionRange(cursorStart, cursorStart + selected.length);
+
+      updatePreview();
+    }
+
+    function insertText(textToInsert) {
+      const start = editor.selectionStart;
+      const value = editor.value;
+      editor.value = value.slice(0, start) + textToInsert + value.slice(editor.selectionEnd);
+      const newPos = start + textToInsert.length;
+      editor.focus();
+      editor.setSelectionRange(newPos, newPos);
+      updatePreview();
+    }
+
+    // Association des actions aux boutons de la barre d'outils
+    document.querySelectorAll(".toolbar-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const action = btn.dataset.action;
+        switch (action) {
+          case "bold":      wrapSelection("**"); break;
+          case "italic":    wrapSelection("*"); break;
+          case "underline": wrapSelection("__"); break;
+          case "strike":    wrapSelection("~~"); break;
+          case "code":      wrapSelection("`"); break;
+          case "codeblock": wrapSelection("```js\n", "\n```", "votre code"); break;
+          case "spoiler":   wrapSelection("||"); break;
+          case "quote":     insertText("> "); break;
+          case "timestamp": {
+            // Insère un timestamp relatif basé sur l'heure actuelle
+            const now = Math.floor(Date.now() / 1000);
+            insertText(`<t:${now}:R>`);
+            break;
+          }
+        }
+      });
+    });
+
+    /* ===================================================================== */
+    /*  TRONCATURE AUTOMATIQUE À 2000 CARACTÈRES                            */
+    /* ===================================================================== */
+    truncateBtn.addEventListener("click", () => {
+      editor.value = editor.value.slice(0, MAX_CHARS);
+      updatePreview();
+      editor.focus();
+    });
+
+    /* ===================================================================== */
+    /*  PERSONNALISATION DE L'UTILISATEUR (pseudo & avatar)                 */
+    /* ===================================================================== */
+    usernameInput.addEventListener("input", () => {
+      previewUser.textContent = usernameInput.value || "Utilisateur";
+    });
+    avatarInput.addEventListener("input", () => {
+      const url = avatarInput.value.trim();
+      if (url) previewAvatar.src = url;
+    });
+
+    /* ===================================================================== */
+    /*  HORLOGE DU MESSAGE (heure actuelle)                                  */
+    /* ===================================================================== */
+    (function setMessageTime() {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, "0");
+      const mm = String(now.getMinutes()).padStart(2, "0");
+      document.getElementById("preview-time").textContent = `aujourd'hui à ${hh}:${mm}`;
+    })();
+
+    /* ===================================================================== */
+    /*  ÉCOUTEUR PRINCIPAL & CONTENU DE DÉMONSTRATION                        */
+    /* ===================================================================== */
+    editor.addEventListener("input", updatePreview);
+
+    // Exemple pré-rempli pour montrer toutes les fonctionnalités au chargement
+    editor.value = `# Bienvenue dans l'éditeur Discord ! 🎉
+Voici une démonstration de **gras**, *italique*, __souligné__, ~~barré~~ et ***tout combiné***.
+
+Un petit ||spoiler cliquable|| juste ici, et du \`code en ligne\` aussi.
+
+> Ceci est une citation simple
+> sur plusieurs lignes
+
+## Liste de courses
+- Pommes
+- Bananes
+* Chocolat
+
+## Étapes
+1. Ouvrir Discord
+2. Coller le message
+3. Profiter !
+
+### Mentions
+Salut <@JohnDoe>, rendez-vous dans <#général> !
+Ping du rôle <@&Modérateur>. Attention @everyone et @here !
+
+### Timestamp dynamique
+Rendez-vous <t:1735689600:R> (format relatif) — soit le <t:1735689600:F>.
+
+\`\`\`python
+def hello():
+    print("Bonjour Discord !")
+    return 42
+\`\`\``;
+
+    // Rendu initial
+    updatePreview();
+  </script>
+</body>
+</html>
